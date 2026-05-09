@@ -1,0 +1,16 @@
+services:
+  dev:
+    build:
+      context: .
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - go-build-cache:/root/.cache/go-build
+      - go-mod-cache:/root/go/pkg/mod
+    environment:
+      CGO_ENABLED: "1"
+    command: sleep infinity
+
+volumes:
+  go-build-cache:
+  go-mod-cache:
