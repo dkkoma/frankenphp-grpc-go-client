@@ -12,7 +12,10 @@ Core. CGo is used for the PHP/Zend native extension boundary.
 - Implemented: raw-byte grpc-go unary and server-streaming client core
 - Implemented: in-process grpc-go tests for payload, metadata, status,
   deadline, stream lifecycle, and channel close behavior
-- Planned next: FrankenPHP/Zend bridge and Spanner emulator smoke
+- Implemented: manual CGo/Zend bridge exposing the `FrankenGrpc` PHP classes
+- Implemented: FrankenPHP binary build and PHP API smoke
+- Planned next: Spanner emulator smoke through the consumer repository's
+  FrankenPHP transport path
 
 ## Development
 
