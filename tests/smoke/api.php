@@ -25,4 +25,17 @@ assert($result->status === $status);
 assert($result->initialMetadata === ['h' => ['v']]);
 assert($result->trailingMetadata === ['t' => ['v']]);
 
+$channel = new Channel('passthrough:///unused', [
+    'credentials' => new stdClass(),
+    'grpc.default_authority' => 'spanner-emulator',
+    'grpc.ssl_target_name_override' => 'ignored-for-plaintext',
+    'grpc.primary_user_agent' => 'frankengrpc-smoke',
+    'grpc.max_receive_message_length' => -1,
+    'grpc.max_metadata_size' => 8192,
+    'grpc.absolute_max_metadata_size' => 16384,
+    'unknown.option' => 'ignored',
+]);
+$channel->close();
+$channel->close();
+
 echo "ok\n";

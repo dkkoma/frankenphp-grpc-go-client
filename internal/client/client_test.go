@@ -8,7 +8,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
@@ -242,6 +241,49 @@ func TestUnaryDeadlineExceeded(t *testing.T) {
 	}
 }
 
+func TestUnaryMaxReceiveMessageLength(t *testing.T) {
+	maxReceive := 4
+	fixture := newFixtureWithDialConfig(t, testHandlers{
+		unary: func(ctx context.Context, payload []byte) ([]byte, error) {
+			return []byte("too-large"), nil
+		},
+	}, DialConfig{MaxReceiveMessageLength: &maxReceive})
+
+	result, err := Unary(context.Background(), fixture.channel, UnaryRequest{
+		Method:  "/frankengrpc.Test/Unary",
+		Payload: []byte("request"),
+	})
+	if err != nil {
+		t.Fatalf("Unary returned error: %v", err)
+	}
+	if result.Status.Code != int(codes.ResourceExhausted) {
+		t.Fatalf("status code = %d, want ResourceExhausted", result.Status.Code)
+	}
+}
+
+func TestUnaryMaxReceiveMessageLengthMinusOneAllowsLargePayload(t *testing.T) {
+	maxReceive := -1
+	fixture := newFixtureWithDialConfig(t, testHandlers{
+		unary: func(ctx context.Context, payload []byte) ([]byte, error) {
+			return []byte("large-enough-for-this-test"), nil
+		},
+	}, DialConfig{MaxReceiveMessageLength: &maxReceive})
+
+	result, err := Unary(context.Background(), fixture.channel, UnaryRequest{
+		Method:  "/frankengrpc.Test/Unary",
+		Payload: []byte("request"),
+	})
+	if err != nil {
+		t.Fatalf("Unary returned error: %v", err)
+	}
+	if result.Status.Code != int(codes.OK) {
+		t.Fatalf("status code = %d, want OK", result.Status.Code)
+	}
+	if string(result.Payload) != "large-enough-for-this-test" {
+		t.Fatalf("payload = %q, want large payload", result.Payload)
+	}
+}
+
 type testFixture struct {
 	channel *Channel
 	server  *grpc.Server
@@ -253,6 +295,10 @@ type testHandlers struct {
 }
 
 func newFixture(t *testing.T, handlers testHandlers) testFixture {
+	return newFixtureWithDialConfig(t, handlers, DialConfig{})
+}
+
+func newFixtureWithDialConfig(t *testing.T, handlers testHandlers, config DialConfig) testFixture {
 	t.Helper()
 
 	listener := bufconn.Listen(bufSize)
@@ -264,24 +310,20 @@ func newFixture(t *testing.T, handlers testHandlers) testFixture {
 		}
 	}()
 
-	conn, err := grpc.NewClient(
+	channel, err := DialWithConfig(
 		"passthrough:///bufnet",
+		config,
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 			return listener.Dial()
 		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
 		t.Fatalf("NewClient returned error: %v", err)
 	}
 
-	channel := NewChannel(conn, func() error {
-		err := conn.Close()
-		server.Stop()
-		return err
-	})
 	t.Cleanup(func() {
 		channel.Close()
+		server.Stop()
 		listener.Close()
 	})
 

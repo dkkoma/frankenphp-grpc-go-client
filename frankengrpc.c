@@ -193,6 +193,49 @@ static void fg_free_input_metadata(fg_metadata *metadata)
     metadata->entries_len = 0;
 }
 
+static void fg_channel_option_string(HashTable *table, const char *key, size_t key_len, char **out, size_t *out_len)
+{
+    zval *value = zend_hash_str_find(table, key, key_len);
+    if (value == NULL || Z_TYPE_P(value) != IS_STRING) {
+        return;
+    }
+    *out = Z_STRVAL_P(value);
+    *out_len = Z_STRLEN_P(value);
+}
+
+static void fg_channel_option_long(HashTable *table, const char *key, size_t key_len, zend_long min, int *has_value, int *out)
+{
+    zval *value = zend_hash_str_find(table, key, key_len);
+    if (value == NULL || Z_TYPE_P(value) != IS_LONG || Z_LVAL_P(value) < min || Z_LVAL_P(value) > INT32_MAX) {
+        return;
+    }
+    *has_value = 1;
+    *out = (int) Z_LVAL_P(value);
+}
+
+static fg_channel_options fg_channel_options_from_zval(zval *options)
+{
+    fg_channel_options out = {0};
+    if (options == NULL) {
+        return out;
+    }
+
+    HashTable *table = Z_ARRVAL_P(options);
+    zval *credentials = zend_hash_str_find(table, "credentials", sizeof("credentials") - 1);
+    if (credentials != NULL) {
+        out.has_credentials = 1;
+    }
+
+    fg_channel_option_string(table, "grpc.default_authority", sizeof("grpc.default_authority") - 1, &out.authority, &out.authority_len);
+    fg_channel_option_string(table, "grpc.ssl_target_name_override", sizeof("grpc.ssl_target_name_override") - 1, &out.ssl_target_name_override, &out.ssl_target_name_override_len);
+    fg_channel_option_string(table, "grpc.primary_user_agent", sizeof("grpc.primary_user_agent") - 1, &out.primary_user_agent, &out.primary_user_agent_len);
+    fg_channel_option_long(table, "grpc.max_receive_message_length", sizeof("grpc.max_receive_message_length") - 1, -1, &out.has_max_receive_message_length, &out.max_receive_message_length);
+    fg_channel_option_long(table, "grpc.max_metadata_size", sizeof("grpc.max_metadata_size") - 1, 0, &out.has_max_metadata_size, &out.max_metadata_size);
+    fg_channel_option_long(table, "grpc.absolute_max_metadata_size", sizeof("grpc.absolute_max_metadata_size") - 1, 0, &out.has_absolute_max_metadata_size, &out.absolute_max_metadata_size);
+
+    return out;
+}
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_channel_construct, 0, 0, 1)
     ZEND_ARG_TYPE_INFO(0, target, IS_STRING, 0)
     ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, options, IS_ARRAY, 0, "[]")
@@ -252,14 +295,17 @@ PHP_METHOD(FrankenGrpc_Channel, __construct)
 {
     zend_string *target;
     zval *options = NULL;
+    fg_channel_options channel_options = {0};
     ZEND_PARSE_PARAMETERS_START(1, 2)
         Z_PARAM_STR(target)
         Z_PARAM_OPTIONAL
         Z_PARAM_ARRAY(options)
     ZEND_PARSE_PARAMETERS_END();
 
+    channel_options = fg_channel_options_from_zval(options);
+
     fg_handle_object *obj = FG_HANDLE_P(ZEND_THIS);
-    obj->handle = fg_channel_new(ZSTR_VAL(target), ZSTR_LEN(target));
+    obj->handle = fg_channel_new(ZSTR_VAL(target), ZSTR_LEN(target), channel_options);
     if (obj->handle == 0) {
         zend_throw_exception(zend_ce_exception, "failed to create FrankenGrpc channel", 0);
     }

@@ -41,8 +41,8 @@ type serverStreamingCall struct {
 }
 
 //export fg_channel_new
-func fg_channel_new(target *C.char, targetLen C.size_t) C.uint64_t {
-	ch, err := client.Dial(goString(target, targetLen))
+func fg_channel_new(target *C.char, targetLen C.size_t, options C.fg_channel_options) C.uint64_t {
+	ch, err := client.DialWithConfig(goString(target, targetLen), goDialConfig(options))
 	if err != nil {
 		return 0
 	}
@@ -56,6 +56,28 @@ func fg_channel_close(handle C.uint64_t) {
 		_ = ch.Close()
 	}
 	registry.Delete(uint64(handle))
+}
+
+func goDialConfig(options C.fg_channel_options) client.DialConfig {
+	config := client.DialConfig{
+		HasCredentialsPlaceholder: options.has_credentials != 0,
+		Authority:                 goString(options.authority, options.authority_len),
+		TLSServerNameOverride:     goString(options.ssl_target_name_override, options.ssl_target_name_override_len),
+		PrimaryUserAgent:          goString(options.primary_user_agent, options.primary_user_agent_len),
+	}
+	if options.has_max_receive_message_length != 0 {
+		value := int(options.max_receive_message_length)
+		config.MaxReceiveMessageLength = &value
+	}
+	if options.has_max_metadata_size != 0 {
+		value := int(options.max_metadata_size)
+		config.MaxMetadataSize = &value
+	}
+	if options.has_absolute_max_metadata_size != 0 {
+		value := int(options.absolute_max_metadata_size)
+		config.AbsoluteMaxMetadataSize = &value
+	}
+	return config
 }
 
 //export fg_unary_call_new

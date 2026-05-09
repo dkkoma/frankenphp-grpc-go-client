@@ -10,6 +10,22 @@ typedef struct {
 } fg_string;
 
 typedef struct {
+    int has_credentials;
+    char *authority;
+    size_t authority_len;
+    char *ssl_target_name_override;
+    size_t ssl_target_name_override_len;
+    char *primary_user_agent;
+    size_t primary_user_agent_len;
+    int has_max_receive_message_length;
+    int max_receive_message_length;
+    int has_max_metadata_size;
+    int max_metadata_size;
+    int has_absolute_max_metadata_size;
+    int absolute_max_metadata_size;
+} fg_channel_options;
+
+typedef struct {
     fg_string *values;
     size_t values_len;
     char *key;

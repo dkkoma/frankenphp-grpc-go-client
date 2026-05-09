@@ -30,6 +30,10 @@ func Unary(ctx context.Context, ch *Channel, req UnaryRequest) (UnaryResult, err
 	if err != nil {
 		return UnaryResult{}, err
 	}
+	callOptions, err := ch.CallOptions()
+	if err != nil {
+		return UnaryResult{}, err
+	}
 
 	ctx, cancel := contextWithTimeout(ctx, req.TimeoutSeconds)
 	defer cancel()
@@ -42,16 +46,13 @@ func Unary(ctx context.Context, ch *Channel, req UnaryRequest) (UnaryResult, err
 	var header metadata.MD
 	var trailer metadata.MD
 	var remotePeer peer.Peer
-	err = conn.Invoke(
-		ctx,
-		req.Method,
-		req.Payload,
-		&response,
+	callOptions = append(callOptions,
 		grpc.ForceCodec(bytesCodec{}),
 		grpc.Header(&header),
 		grpc.Trailer(&trailer),
 		grpc.Peer(&remotePeer),
 	)
+	err = conn.Invoke(ctx, req.Method, req.Payload, &response, callOptions...)
 
 	if err != nil {
 		st, ok := statusFromError(err)

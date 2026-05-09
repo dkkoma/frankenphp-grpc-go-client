@@ -36,6 +36,10 @@ func StartServerStream(ctx context.Context, ch *Channel, req ServerStreamingRequ
 	if err != nil {
 		return nil, err
 	}
+	callOptions, err := ch.CallOptions()
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := contextWithTimeout(ctx, req.TimeoutSeconds)
 	if md := normalizeMetadata(req.Metadata); len(md) > 0 {
@@ -47,7 +51,8 @@ func StartServerStream(ctx context.Context, ch *Channel, req ServerStreamingRequ
 		ClientStreams: false,
 	}
 	var remotePeer peer.Peer
-	stream, err := conn.NewStream(ctx, desc, req.Method, grpc.ForceCodec(bytesCodec{}), grpc.Peer(&remotePeer))
+	callOptions = append(callOptions, grpc.ForceCodec(bytesCodec{}), grpc.Peer(&remotePeer))
+	stream, err := conn.NewStream(ctx, desc, req.Method, callOptions...)
 	if err != nil {
 		cancel()
 		return nil, err
