@@ -16,6 +16,8 @@ Core. CGo is used for the PHP/Zend native extension boundary.
 - Implemented: PHP `Channel` option parsing for the php-grpc-lite transport
   handoff, including tolerated credentials objects, authority override, user
   agent placeholder, receive-size limit, and metadata-size dial limits
+- Implemented: grpc-go `ClientConn` pooling for matching PHP channel
+  target/options, with PHP channel objects represented as closeable leases
 - Implemented: FrankenPHP binary build and PHP API smoke
 - Planned next: Spanner emulator smoke through the consumer repository's
   FrankenPHP transport path
@@ -81,3 +83,10 @@ are ignored for compatibility.
 
 The first smoke target is plaintext Spanner emulator. TLS and mTLS credential
 mapping are intentionally not production-ready yet.
+
+## Channel Pooling
+
+`FrankenGrpc\Channel` objects acquire a lease from a process-local channel pool.
+The pool reuses the same grpc-go `ClientConn` when the target and normalized
+effective options match. `Channel::close()` releases only that PHP object's
+lease; the physical `ClientConn` is closed when the final lease is released.

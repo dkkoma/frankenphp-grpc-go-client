@@ -42,7 +42,7 @@ type serverStreamingCall struct {
 
 //export fg_channel_new
 func fg_channel_new(target *C.char, targetLen C.size_t, options C.fg_channel_options) C.uint64_t {
-	ch, err := client.DialWithConfig(goString(target, targetLen), goDialConfig(options))
+	ch, err := client.AcquireChannel(goString(target, targetLen), goDialConfig(options))
 	if err != nil {
 		return 0
 	}

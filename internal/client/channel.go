@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 var ErrChannelClosed = errors.New("frankengrpc: channel is closed")
@@ -34,18 +33,7 @@ func Dial(target string, opts ...grpc.DialOption) (*Channel, error) {
 }
 
 func DialWithConfig(target string, config DialConfig, opts ...grpc.DialOption) (*Channel, error) {
-	dialOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if config.Authority != "" {
-		dialOptions = append(dialOptions, grpc.WithAuthority(config.Authority))
-	} else if config.TLSServerNameOverride != "" {
-		dialOptions = append(dialOptions, grpc.WithAuthority(config.TLSServerNameOverride))
-	}
-	if maxHeaderListSize, ok := maxHeaderListSize(config); ok {
-		dialOptions = append(dialOptions, grpc.WithMaxHeaderListSize(uint32(maxHeaderListSize)))
-	}
-	dialOptions = append(dialOptions, opts...)
-
-	conn, err := grpc.NewClient(target, dialOptions...)
+	conn, err := grpc.NewClient(target, dialOptions(config, opts...)...)
 	if err != nil {
 		return nil, err
 	}
