@@ -14,7 +14,6 @@ import "C"
 import (
 	"context"
 	"errors"
-	"sync"
 	"unsafe"
 
 	"github.com/dkkoma/frankenphp-grpc-go-client/internal/client"
@@ -24,14 +23,6 @@ import (
 
 func init() {
 	frankenphp.RegisterExtension(unsafe.Pointer(&C.frankengrpc_module_entry))
-}
-
-type unaryCall struct {
-	mu      sync.Mutex
-	channel uint64
-	method  string
-	cancel  context.CancelFunc
-	peer    string
 }
 
 type serverStreamingCall struct {
@@ -80,35 +71,15 @@ func goDialConfig(options C.fg_channel_options) client.DialConfig {
 	return config
 }
 
-//export fg_unary_call_new
-func fg_unary_call_new(channel C.uint64_t, method *C.char, methodLen C.size_t) C.uint64_t {
-	if _, err := registry.Get[*client.Channel](uint64(channel)); err != nil {
-		return 0
-	}
-	return C.uint64_t(registry.Put(&unaryCall{
-		channel: uint64(channel),
-		method:  goString(method, methodLen),
-	}))
-}
-
-//export fg_unary_call_free
-func fg_unary_call_free(handle C.uint64_t) {
-	registry.Delete(uint64(handle))
-}
-
 //export fg_unary_start
-func fg_unary_start(handle C.uint64_t, payload *C.char, payloadLen C.size_t, md C.fg_metadata, hasTimeout C.int, timeout C.double) C.fg_unary_result {
-	call, err := registry.Get[*unaryCall](uint64(handle))
-	if err != nil {
-		return unaryError(err)
-	}
-	ch, err := registry.Get[*client.Channel](call.channel)
+func fg_unary_start(channel C.uint64_t, method *C.char, methodLen C.size_t, payload *C.char, payloadLen C.size_t, md C.fg_metadata, hasTimeout C.int, timeout C.double) C.fg_unary_result {
+	ch, err := registry.Get[*client.Channel](uint64(channel))
 	if err != nil {
 		return unaryError(err)
 	}
 
 	req := client.UnaryRequest{
-		Method:   call.method,
+		Method:   goString(method, methodLen),
 		Payload:  goBytes(payload, payloadLen),
 		Metadata: goMetadata(md),
 	}
@@ -118,21 +89,12 @@ func fg_unary_start(handle C.uint64_t, payload *C.char, payloadLen C.size_t, md 
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	call.mu.Lock()
-	call.cancel = cancel
-	call.mu.Unlock()
-	defer func() {
-		call.mu.Lock()
-		call.cancel = nil
-		call.mu.Unlock()
-		cancel()
-	}()
+	defer cancel()
 
 	result, err := client.Unary(ctx, ch, req)
 	if err != nil {
 		return unaryError(err)
 	}
-	call.peer = result.Peer
 
 	return C.fg_unary_result{
 		payload:           cString(result.Payload),
@@ -142,29 +104,6 @@ func fg_unary_start(handle C.uint64_t, payload *C.char, payloadLen C.size_t, md 
 		peer:              cCharBytes([]byte(result.Peer)),
 		peer_len:          C.size_t(len(result.Peer)),
 	}
-}
-
-//export fg_unary_cancel
-func fg_unary_cancel(handle C.uint64_t) {
-	call, err := registry.Get[*unaryCall](uint64(handle))
-	if err != nil {
-		return
-	}
-	call.mu.Lock()
-	cancel := call.cancel
-	call.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-}
-
-//export fg_unary_get_peer
-func fg_unary_get_peer(handle C.uint64_t) C.fg_string {
-	call, err := registry.Get[*unaryCall](uint64(handle))
-	if err != nil {
-		return C.fg_string{}
-	}
-	return cString([]byte(call.peer))
 }
 
 //export fg_server_streaming_call_new

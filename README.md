@@ -13,6 +13,8 @@ Core. CGo is used for the PHP/Zend native extension boundary.
 - Implemented: in-process grpc-go tests for payload, metadata, status,
   deadline, receive-size limits, stream lifecycle, and channel close behavior
 - Implemented: manual CGo/Zend bridge exposing the `FrankenGrpc` PHP classes
+- Implemented: lightweight unary call objects; `UnaryCall` construction stays
+  in Zend/PHP state and enters Go only when `start()` is called
 - Implemented: PHP `Channel` option parsing for the php-grpc-lite transport
   handoff, including tolerated credentials objects, authority override, user
   agent placeholder, receive-size limit, and metadata-size dial limits

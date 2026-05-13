@@ -35,6 +35,9 @@ $channel = new Channel('passthrough:///unused', [
     'grpc.absolute_max_metadata_size' => 16384,
     'unknown.option' => 'ignored',
 ]);
+$call = new UnaryCall($channel, '/frankengrpc.Test/Unary');
+assert($call->getPeer() === '');
+$call->cancel();
 $channel->close();
 $channel->close();
 

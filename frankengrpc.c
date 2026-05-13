@@ -20,12 +20,25 @@ typedef struct {
     zend_object std;
 } fg_handle_object;
 
+typedef struct {
+    zval channel;
+    zend_string *method;
+    zend_string *peer;
+    zend_object std;
+} fg_unary_call_object;
+
 static inline fg_handle_object *fg_handle_from_obj(zend_object *obj)
 {
     return (fg_handle_object *)((char *)(obj) - XtOffsetOf(fg_handle_object, std));
 }
 
+static inline fg_unary_call_object *fg_unary_call_from_obj(zend_object *obj)
+{
+    return (fg_unary_call_object *)((char *)(obj) - XtOffsetOf(fg_unary_call_object, std));
+}
+
 #define FG_HANDLE_P(zv) fg_handle_from_obj(Z_OBJ_P((zv)))
+#define FG_UNARY_CALL_P(zv) fg_unary_call_from_obj(Z_OBJ_P((zv)))
 
 static zend_object_handlers channel_handlers;
 static zend_object_handlers unary_call_handlers;
@@ -42,9 +55,10 @@ static zend_object *fg_channel_create(zend_class_entry *ce)
 
 static zend_object *fg_unary_call_create(zend_class_entry *ce)
 {
-    fg_handle_object *obj = ecalloc(1, sizeof(fg_handle_object) + zend_object_properties_size(ce));
+    fg_unary_call_object *obj = ecalloc(1, sizeof(fg_unary_call_object) + zend_object_properties_size(ce));
     zend_object_std_init(&obj->std, ce);
     object_properties_init(&obj->std, ce);
+    ZVAL_UNDEF(&obj->channel);
     obj->std.handlers = &unary_call_handlers;
     return &obj->std;
 }
@@ -70,10 +84,18 @@ static void fg_channel_free(zend_object *object)
 
 static void fg_unary_call_free_obj(zend_object *object)
 {
-    fg_handle_object *obj = fg_handle_from_obj(object);
-    if (obj->handle != 0) {
-        fg_unary_call_free(obj->handle);
-        obj->handle = 0;
+    fg_unary_call_object *obj = fg_unary_call_from_obj(object);
+    if (!Z_ISUNDEF(obj->channel)) {
+        zval_ptr_dtor(&obj->channel);
+        ZVAL_UNDEF(&obj->channel);
+    }
+    if (obj->method != NULL) {
+        zend_string_release(obj->method);
+        obj->method = NULL;
+    }
+    if (obj->peer != NULL) {
+        zend_string_release(obj->peer);
+        obj->peer = NULL;
     }
     zend_object_std_dtor(&obj->std);
 }
@@ -331,11 +353,25 @@ PHP_METHOD(FrankenGrpc_UnaryCall, __construct)
     ZEND_PARSE_PARAMETERS_END();
 
     fg_handle_object *channel_obj = FG_HANDLE_P(channel);
-    fg_handle_object *obj = FG_HANDLE_P(ZEND_THIS);
-    obj->handle = fg_unary_call_new(channel_obj->handle, ZSTR_VAL(method), ZSTR_LEN(method));
-    if (obj->handle == 0) {
+    if (channel_obj->handle == 0) {
         zend_throw_exception(zend_ce_exception, "failed to create FrankenGrpc unary call", 0);
+        RETURN_THROWS();
     }
+
+    fg_unary_call_object *obj = FG_UNARY_CALL_P(ZEND_THIS);
+    if (!Z_ISUNDEF(obj->channel)) {
+        zval_ptr_dtor(&obj->channel);
+        ZVAL_UNDEF(&obj->channel);
+    }
+    if (obj->method != NULL) {
+        zend_string_release(obj->method);
+    }
+    if (obj->peer != NULL) {
+        zend_string_release(obj->peer);
+        obj->peer = NULL;
+    }
+    ZVAL_COPY(&obj->channel, channel);
+    obj->method = zend_string_copy(method);
 }
 
 PHP_METHOD(FrankenGrpc_UnaryCall, start)
@@ -364,14 +400,19 @@ PHP_METHOD(FrankenGrpc_UnaryCall, start)
         RETURN_THROWS();
     }
 
-    fg_handle_object *obj = FG_HANDLE_P(ZEND_THIS);
-    fg_unary_result result = fg_unary_start(obj->handle, ZSTR_VAL(payload), ZSTR_LEN(payload), input_metadata, timeout_is_null ? 0 : 1, timeout);
+    fg_unary_call_object *obj = FG_UNARY_CALL_P(ZEND_THIS);
+    fg_handle_object *channel_obj = FG_HANDLE_P(&obj->channel);
+    fg_unary_result result = fg_unary_start(channel_obj->handle, ZSTR_VAL(obj->method), ZSTR_LEN(obj->method), ZSTR_VAL(payload), ZSTR_LEN(payload), input_metadata, timeout_is_null ? 0 : 1, timeout);
     fg_free_input_metadata(&input_metadata);
     if (result.error.has_error) {
         fg_throw_error(result.error);
         fg_free_unary_result(result);
         RETURN_THROWS();
     }
+    if (obj->peer != NULL) {
+        zend_string_release(obj->peer);
+    }
+    obj->peer = zend_string_init(result.peer ? result.peer : "", result.peer_len, 0);
     fg_unary_result_to_object(result, return_value);
     fg_free_unary_result(result);
 }
@@ -379,17 +420,16 @@ PHP_METHOD(FrankenGrpc_UnaryCall, start)
 PHP_METHOD(FrankenGrpc_UnaryCall, cancel)
 {
     ZEND_PARSE_PARAMETERS_NONE();
-    fg_handle_object *obj = FG_HANDLE_P(ZEND_THIS);
-    fg_unary_cancel(obj->handle);
 }
 
 PHP_METHOD(FrankenGrpc_UnaryCall, getPeer)
 {
     ZEND_PARSE_PARAMETERS_NONE();
-    fg_handle_object *obj = FG_HANDLE_P(ZEND_THIS);
-    fg_string peer = fg_unary_get_peer(obj->handle);
-    RETVAL_STRINGL(peer.data ? peer.data : "", peer.len);
-    fg_free_string(peer);
+    fg_unary_call_object *obj = FG_UNARY_CALL_P(ZEND_THIS);
+    if (obj->peer == NULL) {
+        RETURN_EMPTY_STRING();
+    }
+    RETURN_STR_COPY(obj->peer);
 }
 
 PHP_METHOD(FrankenGrpc_ServerStreamingCall, __construct)
@@ -620,7 +660,7 @@ PHP_MINIT_FUNCTION(frankengrpc)
     unary_call_ce = zend_register_internal_class(&ce);
     unary_call_ce->create_object = fg_unary_call_create;
     memcpy(&unary_call_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
-    unary_call_handlers.offset = XtOffsetOf(fg_handle_object, std);
+    unary_call_handlers.offset = XtOffsetOf(fg_unary_call_object, std);
     unary_call_handlers.free_obj = fg_unary_call_free_obj;
 
     INIT_NS_CLASS_ENTRY(ce, "FrankenGrpc", "ServerStreamingCall", server_streaming_call_methods);
